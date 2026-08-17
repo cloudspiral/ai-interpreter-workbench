@@ -16,11 +16,23 @@ interface RealtimeProviderEvent {
   error?: { message?: string; code?: string };
 }
 
+export function hasAudibleSignal(samples: Float32Array, threshold = 0.012): boolean {
+  if (samples.length === 0) return false;
+  let squaredAmplitude = 0;
+  for (const sample of samples) squaredAmplitude += sample * sample;
+  return Math.sqrt(squaredAmplitude / samples.length) >= threshold;
+}
+
 export class RealtimeTransport implements InterpreterTransport {
   private peer?: RTCPeerConnection;
   private stream?: MediaStream;
   private channel?: RTCDataChannel;
   private audio?: HTMLAudioElement;
+  private outputContext?: AudioContext;
+  private outputSource?: MediaStreamAudioSourceNode;
+  private outputAnalyser?: AnalyserNode;
+  private outputSilentGain?: GainNode;
+  private outputFrame?: number;
   private onEvent?: EventHandler;
   private turnId = 0;
   private speechStartedAt?: number;
@@ -52,6 +64,7 @@ export class RealtimeTransport implements InterpreterTransport {
       peer.ontrack = (event) => {
         audio.srcObject = event.streams[0];
         void audio.play().catch(() => undefined);
+        this.monitorOutputAudio(event.streams[0]);
       };
 
       peer.onconnectionstatechange = () => {
@@ -116,7 +129,16 @@ export class RealtimeTransport implements InterpreterTransport {
     for (const track of this.stream?.getTracks() ?? []) track.stop();
     this.audio?.pause();
     this.audio?.remove();
+    if (this.outputFrame !== undefined) cancelAnimationFrame(this.outputFrame);
+    this.outputSource?.disconnect();
+    this.outputSilentGain?.disconnect();
+    await this.outputContext?.close().catch(() => undefined);
     this.audio = undefined;
+    this.outputFrame = undefined;
+    this.outputAnalyser = undefined;
+    this.outputSource = undefined;
+    this.outputSilentGain = undefined;
+    this.outputContext = undefined;
     this.channel = undefined;
     this.peer = undefined;
     this.stream = undefined;
@@ -239,6 +261,40 @@ export class RealtimeTransport implements InterpreterTransport {
     });
   }
 
+  private monitorOutputAudio(stream: MediaStream): void {
+    if (this.outputFrame !== undefined) cancelAnimationFrame(this.outputFrame);
+    this.outputSource?.disconnect();
+    this.outputSilentGain?.disconnect();
+    void this.outputContext?.close().catch(() => undefined);
+
+    const context = new AudioContext({ latencyHint: "interactive" });
+    const source = context.createMediaStreamSource(stream);
+    const analyser = context.createAnalyser();
+    const silentGain = context.createGain();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.15;
+    silentGain.gain.value = 0;
+    source.connect(analyser);
+    analyser.connect(silentGain);
+    silentGain.connect(context.destination);
+    this.outputContext = context;
+    this.outputSource = source;
+    this.outputAnalyser = analyser;
+    this.outputSilentGain = silentGain;
+    void context.resume().catch(() => undefined);
+
+    const samples = new Float32Array(analyser.fftSize);
+    const inspect = () => {
+      if (this.closed || this.outputAnalyser !== analyser) return;
+      analyser.getFloatTimeDomainData(samples);
+      if (!this.firstAudioSeen && (this.speechStoppedAt || this.speechStartedAt) && hasAudibleSignal(samples)) {
+        this.markFirstAudio();
+      }
+      this.outputFrame = requestAnimationFrame(inspect);
+    };
+    inspect();
+  }
+
   private ensureTurn(): void {
     if (this.turnId === 0) {
       this.turnId = 1;
@@ -250,4 +306,3 @@ export class RealtimeTransport implements InterpreterTransport {
     this.onEvent?.({ type: "error", code, message, retryable });
   }
 }
-
