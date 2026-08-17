@@ -12,6 +12,7 @@
     "build": "tsc -p tsconfig.server.json && vite build",
     "start": "node dist-server/server/index.js",
     "preflight": "tsx scripts/providerPreflight.ts",
+    "smoke:live:cascade": "tsx scripts/liveCascadeSmoke.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
     "test:watch": "vitest",

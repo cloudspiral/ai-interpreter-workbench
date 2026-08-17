@@ -101,6 +101,14 @@ pnpm build      # production server and Vite bundle
 pnpm check      # all three in sequence
 ```
 
+To exercise the deployed Cascade path with two synthetic English turns, Japanese text/audio assertions, per-turn correlation checks, and the three-second latency target:
+
+```bash
+pnpm smoke:live:cascade 'wss://your-service.example/api/cascade?source=en&target=ja'
+```
+
+With no fixture paths, the command uses the configured OpenAI TTS model to generate “The sky is blue.” and “The grass is green.” as 24 kHz mono PCM input. You can instead append two raw PCM paths to test recorded fixtures.
+
 ## Deploy to Railway
 
 The repository includes a multi-stage `Dockerfile` and `railway.json`. Create a Railway service, set `OPENAI_API_KEY`, and deploy the repository. Railway supplies `PORT`; the server binds to `0.0.0.0` and exposes `/api/health` for health checks.

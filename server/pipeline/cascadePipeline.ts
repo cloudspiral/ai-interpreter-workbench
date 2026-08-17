@@ -145,7 +145,7 @@ export class CascadePipeline {
       source: "",
       target: "",
       sourceChunker: new StableTextChunker({
-        softLimit: japaneseSource ? 10 : 22,
+        softLimit: 10,
         hardLimit: japaneseSource ? 22 : 52,
       }),
       speechStartedAt: this.now(),

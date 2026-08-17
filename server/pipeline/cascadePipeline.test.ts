@@ -157,6 +157,39 @@ describe("CascadePipeline", () => {
     ]));
   });
 
+  it("starts translating a short complete sentence before the transcription completion event", async () => {
+    const translation: TranslationProvider = {
+      translateStream: vi.fn(async (text, _pair, onDelta) => {
+        onDelta(`JA:${text}`);
+        return { text: `JA:${text}`, inputTokens: 2, outputTokens: 2 };
+      }),
+    };
+    const speech: SpeechProvider = {
+      synthesizeStream: vi.fn(async (_text, onAudio) => {
+        onAudio(Uint8Array.from([1, 2]));
+      }),
+    };
+    const pipeline = new CascadePipeline({
+      pair: LANGUAGE_PAIRS[0],
+      models,
+      translation,
+      speech,
+      sendJson: () => undefined,
+      sendAudio: () => undefined,
+    });
+
+    pipeline.markSpeechStarted("short-item");
+    pipeline.addSourceDelta("The sky is blue.", "short-item");
+
+    await vi.waitFor(() => {
+      expect(translation.translateStream).toHaveBeenCalledWith(
+        "The sky is blue.",
+        LANGUAGE_PAIRS[0],
+        expect.any(Function),
+      );
+    });
+  });
+
   it("drops VAD-only empty turns without creating transcript cards or provider work", async () => {
     const events: CascadeServerEvent[] = [];
     const translation: TranslationProvider = {
