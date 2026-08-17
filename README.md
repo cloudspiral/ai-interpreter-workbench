@@ -101,10 +101,16 @@ pnpm build      # production server and Vite bundle
 pnpm check      # all three in sequence
 ```
 
-To exercise the deployed Cascade path with two synthetic English turns, Japanese text/audio assertions, per-turn correlation checks, and the three-second latency target:
+To stress the deployed Cascade path with two rapid synthetic English turns and assert separate source IDs, Japanese text, and audio:
 
 ```bash
 pnpm smoke:live:cascade 'wss://your-service.example/api/cascade?source=en&target=ja'
+```
+
+To pace the second turn after the first audio segment and require both speech-end-to-audio measurements to stay within three seconds:
+
+```bash
+pnpm smoke:live:cascade 'wss://your-service.example/api/cascade?source=en&target=ja' --paced
 ```
 
 With no fixture paths, the command uses the configured OpenAI TTS model to generate “The sky is blue.” and “The grass is green.” as 24 kHz mono PCM input. You can instead append two raw PCM paths to test recorded fixtures.

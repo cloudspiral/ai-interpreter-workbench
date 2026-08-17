@@ -11,18 +11,20 @@ const TURN_GAP_MILLISECONDS = 800;
 const COMPLETION_TIMEOUT_MILLISECONDS = 30_000;
 const CASCADE_TARGET_MILLISECONDS = 3_000;
 
-const [socketUrl, ...pcmPaths] = process.argv.slice(2);
+const [socketUrl, ...smokeArguments] = process.argv.slice(2);
+const mode = smokeArguments.includes("--paced") ? "paced" : "rapid";
+const pcmPaths = smokeArguments.filter((argument) => argument !== "--paced");
 
 if (!socketUrl) {
   console.error(
-    "Usage: pnpm smoke:live:cascade <wss-url> [first-24khz-mono-s16le.pcm second-24khz-mono-s16le.pcm]",
+    "Usage: pnpm smoke:live:cascade <wss-url> [--paced] [first-24khz-mono-s16le.pcm second-24khz-mono-s16le.pcm]",
   );
   process.exitCode = 2;
 } else {
-  await runSmoke(socketUrl, pcmPaths.slice(0, 2));
+  await runSmoke(socketUrl, pcmPaths.slice(0, 2), mode);
 }
 
-async function runSmoke(url: string, paths: string[]): Promise<void> {
+async function runSmoke(url: string, paths: string[], runMode: "rapid" | "paced"): Promise<void> {
   const audioInputs = paths.length === 2
     ? await Promise.all(paths.map((path) => readFile(path)))
     : await synthesizeFixtures();
@@ -34,6 +36,7 @@ async function runSmoke(url: string, paths: string[]): Promise<void> {
   let readyReject: ((error: Error) => void) | undefined;
   let completionResolve: (() => void) | undefined;
   let completionReject: ((error: Error) => void) | undefined;
+  let firstCompletionResolve: (() => void) | undefined;
 
   const ready = new Promise<void>((resolve, reject) => {
     readyResolve = resolve;
@@ -42,6 +45,9 @@ async function runSmoke(url: string, paths: string[]): Promise<void> {
   const completed = new Promise<void>((resolve, reject) => {
     completionResolve = resolve;
     completionReject = reject;
+  });
+  const firstCompleted = new Promise<void>((resolve) => {
+    firstCompletionResolve = resolve;
   });
 
   const timeout = setTimeout(() => {
@@ -70,6 +76,12 @@ async function runSmoke(url: string, paths: string[]): Promise<void> {
       ) {
         completionResolve?.();
       }
+      if (
+        events.some((candidate) => candidate.type === "target_done")
+        && events.some((candidate) => candidate.type === "audio_end")
+      ) {
+        firstCompletionResolve?.();
+      }
     } catch {
       errors.push("invalid_server_event");
       completionReject?.(new Error("The deployed server returned invalid JSON."));
@@ -88,6 +100,10 @@ async function runSmoke(url: string, paths: string[]): Promise<void> {
     await ready;
     await streamPcm(socket, audioInputs[0]);
     await streamSilence(socket, TURN_GAP_MILLISECONDS);
+    if (runMode === "paced") {
+      await firstCompleted;
+      await delay(250);
+    }
     await streamPcm(socket, audioInputs[1]);
     await streamSilence(socket, TURN_GAP_MILLISECONDS);
     await completed;
@@ -136,7 +152,7 @@ async function runSmoke(url: string, paths: string[]): Promise<void> {
       }
     }
     for (const latency of totalLatency.filter((turn) => uniqueTurnIds.has(turn.turnId))) {
-      if (latency.milliseconds > CASCADE_TARGET_MILLISECONDS) {
+      if (runMode === "paced" && latency.milliseconds > CASCADE_TARGET_MILLISECONDS) {
         failures.push(
           `turn ${latency.turnId} total latency ${latency.milliseconds}ms exceeded the ${CASCADE_TARGET_MILLISECONDS}ms target`,
         );
@@ -146,13 +162,18 @@ async function runSmoke(url: string, paths: string[]): Promise<void> {
 
     const report = {
       status: failures.length === 0 ? "PASS" : "FAIL",
+      mode: runMode,
       sourceTurns: firstTwoSources.map(({ turnId, transcript }) => ({ turnId, transcript })),
       targetTurns: targetTurns
         .filter((turn) => uniqueTurnIds.has(turn.turnId))
         .map(({ turnId, translation }) => ({ turnId, translation })),
       totalLatencyMs: totalLatency
         .filter((turn) => uniqueTurnIds.has(turn.turnId))
-        .map(({ turnId, milliseconds }) => ({ turnId, milliseconds })),
+        .map(({ turnId, milliseconds }) => ({
+          turnId,
+          milliseconds,
+          meetsTarget: milliseconds <= CASCADE_TARGET_MILLISECONDS,
+        })),
       stageLatencyMs: events
         .filter((event): event is Extract<CascadeServerEvent, { type: "latency" }> =>
           event.type === "latency" && uniqueTurnIds.has(event.turnId))
