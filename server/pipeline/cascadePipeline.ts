@@ -9,8 +9,10 @@ import { StableTextChunker } from "./chunker.js";
 
 interface TurnState {
   id: number;
+  providerId?: string;
   source: string;
   target: string;
+  sourceChunker: StableTextChunker;
   speechStartedAt: number;
   speechStoppedAt?: number;
   firstSourceAt?: number;
@@ -30,45 +32,38 @@ export interface CascadePipelineOptions {
 }
 
 export class CascadePipeline {
-  private readonly sourceChunker: StableTextChunker;
   private readonly now: () => number;
   private workQueue: Promise<void> = Promise.resolve();
   private turnSequence = 0;
   private audioSequence = 0;
   private currentTurn?: TurnState;
+  private readonly turnsByProviderId = new Map<string, TurnState>();
   private closed = false;
 
   constructor(private readonly options: CascadePipelineOptions) {
-    const japaneseSource = options.pair.source === "ja";
-    this.sourceChunker = new StableTextChunker({
-      softLimit: japaneseSource ? 10 : 22,
-      hardLimit: japaneseSource ? 22 : 52,
-    });
     this.now = options.now ?? Date.now;
   }
 
-  markSpeechStarted(): void {
+  markSpeechStarted(providerTurnId?: string): void {
     if (this.closed) return;
-    this.currentTurn = {
-      id: ++this.turnSequence,
-      source: "",
-      target: "",
-      speechStartedAt: this.now(),
-      inputTokens: 0,
-      outputTokens: 0,
-    };
+    const existingTurn = providerTurnId
+      ? this.turnsByProviderId.get(providerTurnId)
+      : undefined;
+    this.currentTurn = existingTurn ?? this.createTurn(providerTurnId);
     this.options.sendJson({ type: "status", status: "listening", message: "Speech detected" });
   }
 
-  markSpeechStopped(): void {
-    if (!this.currentTurn || this.closed) return;
-    this.currentTurn.speechStoppedAt = this.now();
+  markSpeechStopped(providerTurnId?: string): void {
+    if (this.closed) return;
+    const turn = this.resolveTurn(providerTurnId);
+    if (!turn) return;
+    turn.speechStoppedAt = this.now();
     this.options.sendJson({ type: "status", status: "speaking", message: "Finishing this turn" });
   }
 
-  addSourceDelta(delta: string): void {
+  addSourceDelta(delta: string, providerTurnId?: string): void {
     if (this.closed || !delta) return;
-    const turn = this.ensureTurn();
+    const turn = this.ensureTurn(providerTurnId);
     turn.source += delta;
 
     if (!turn.firstSourceAt) {
@@ -77,26 +72,35 @@ export class CascadePipeline {
     }
 
     this.options.sendJson({ type: "source_delta", delta, turnId: turn.id });
-    for (const chunk of this.sourceChunker.push(delta)) {
+    for (const chunk of turn.sourceChunker.push(delta)) {
       this.enqueueTranslation(turn, chunk);
     }
   }
 
-  completeSource(transcript: string): void {
+  completeSource(transcript: string, providerTurnId?: string): void {
     if (this.closed) return;
-    const turn = this.ensureTurn();
+    const turn = this.ensureTurn(providerTurnId);
+    const finalTranscript = transcript.trim();
 
-    if (!turn.source && transcript) {
-      turn.source = transcript;
-      this.options.sendJson({ type: "source_delta", delta: transcript, turnId: turn.id });
+    if (!turn.source && finalTranscript) {
+      turn.source = finalTranscript;
+      this.options.sendJson({ type: "source_delta", delta: finalTranscript, turnId: turn.id });
     }
 
-    const pending = this.sourceChunker.flush();
+    const pending = turn.sourceChunker.flush();
+    if (!turn.source.trim() && !finalTranscript && !pending) {
+      this.releaseTurn(turn);
+      if (!this.currentTurn) {
+        this.options.sendJson({ type: "status", status: "listening", message: "Ready for the next turn" });
+      }
+      return;
+    }
+
     if (pending) this.enqueueTranslation(turn, pending);
 
     this.options.sendJson({
       type: "source_done",
-      transcript: transcript || turn.source,
+      transcript: finalTranscript || turn.source,
       turnId: turn.id,
     });
 
@@ -110,23 +114,71 @@ export class CascadePipeline {
         outputTokens: turn.outputTokens,
         turnId: turn.id,
       });
-      this.options.sendJson({ type: "status", status: "listening", message: "Ready for the next turn" });
+      this.releaseTurn(turn);
+      if (!this.currentTurn) {
+        this.options.sendJson({ type: "status", status: "listening", message: "Ready for the next turn" });
+      }
     });
   }
 
   async drain(): Promise<void> {
-    const pending = this.sourceChunker.flush();
-    if (pending && this.currentTurn) this.enqueueTranslation(this.currentTurn, pending);
+    const unfinishedTurns = new Set(this.turnsByProviderId.values());
+    if (this.currentTurn) unfinishedTurns.add(this.currentTurn);
+    for (const turn of unfinishedTurns) {
+      const pending = turn.sourceChunker.flush();
+      if (pending) this.enqueueTranslation(turn, pending);
+    }
     await this.workQueue;
   }
 
   close(): void {
     this.closed = true;
+    this.turnsByProviderId.clear();
+    this.currentTurn = undefined;
   }
 
-  private ensureTurn(): TurnState {
-    if (!this.currentTurn) this.markSpeechStarted();
-    return this.currentTurn!;
+  private createTurn(providerId?: string): TurnState {
+    const japaneseSource = this.options.pair.source === "ja";
+    const turn: TurnState = {
+      id: ++this.turnSequence,
+      providerId,
+      source: "",
+      target: "",
+      sourceChunker: new StableTextChunker({
+        softLimit: japaneseSource ? 10 : 22,
+        hardLimit: japaneseSource ? 22 : 52,
+      }),
+      speechStartedAt: this.now(),
+      inputTokens: 0,
+      outputTokens: 0,
+    };
+    if (providerId) this.turnsByProviderId.set(providerId, turn);
+    return turn;
+  }
+
+  private resolveTurn(providerId?: string): TurnState | undefined {
+    if (!providerId) return this.currentTurn;
+    const mappedTurn = this.turnsByProviderId.get(providerId);
+    if (mappedTurn) return mappedTurn;
+    if (this.currentTurn && !this.currentTurn.providerId) {
+      this.currentTurn.providerId = providerId;
+      this.turnsByProviderId.set(providerId, this.currentTurn);
+      return this.currentTurn;
+    }
+    return undefined;
+  }
+
+  private ensureTurn(providerId?: string): TurnState {
+    const existingTurn = this.resolveTurn(providerId);
+    if (existingTurn) return existingTurn;
+    const turn = this.createTurn(providerId);
+    this.currentTurn = turn;
+    return turn;
+  }
+
+  private releaseTurn(turn: TurnState): void {
+    if (turn.providerId) this.turnsByProviderId.delete(turn.providerId);
+    if (this.currentTurn === turn) this.currentTurn = undefined;
   }
 
   private enqueueTranslation(turn: TurnState, sourceChunk: string): void {

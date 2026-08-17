@@ -71,6 +71,24 @@ describe("App", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Needs attention");
   });
 
+  it("marks a completed empty interpretation as finished instead of perpetually streaming", async () => {
+    const transport = new FakeTransport();
+    let handler: EventHandler | undefined;
+    transport.connect.mockImplementation(async (_pair, onEvent) => {
+      handler = onEvent;
+      onEvent({ type: "status", status: "listening", message: "Ready for speech" });
+    });
+    render(<App transportFactory={() => transport} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Start interpreting/ }));
+    await waitFor(() => expect(handler).toBeDefined());
+    handler?.({ type: "source_done", transcript: "Ja.", turnId: 1 });
+    handler?.({ type: "target_done", translation: "", turnId: 1 });
+
+    expect(await screen.findByText("No interpreted speech.")).toBeInTheDocument();
+    expect(screen.queryByText("Interpreting…")).not.toBeInTheDocument();
+  });
+
   it("hot-switches an active session from Realtime to Cascade", async () => {
     const transports = [new FakeTransport(), new FakeTransport()];
     const factory = vi.fn(() => transports.shift() ?? new FakeTransport());

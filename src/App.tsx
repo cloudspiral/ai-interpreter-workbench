@@ -293,12 +293,12 @@ export function App({ transportFactory = defaultTransportFactory }: { transportF
               <article className="turn" key={turn.id}>
                 <div>
                   <p className="turn-label">{pair.sourceName} <span>Original</span></p>
-                  <p className={!turn.sourceDone ? "streaming-text" : ""}>{turn.source || "Listening…"}</p>
+                  <p className={!turn.sourceDone ? "streaming-text" : ""}>{turn.source || (turn.sourceDone ? "No speech detected." : "Listening…")}</p>
                 </div>
                 <div className="turn-arrow" aria-hidden="true">→</div>
                 <div className="target-turn">
                   <p className="turn-label">{pair.targetName} <span>Interpretation</span></p>
-                  <p className={!turn.targetDone ? "streaming-text" : ""}>{turn.target || "Interpreting…"}</p>
+                  <p className={!turn.targetDone ? "streaming-text" : ""}>{turn.target || (turn.targetDone ? "No interpreted speech." : "Interpreting…")}</p>
                 </div>
               </article>
             ))}

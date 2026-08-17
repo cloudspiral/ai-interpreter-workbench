@@ -15,6 +15,7 @@ import { OpenAITranslationProvider } from "./providers/openaiTranslation.js";
 
 interface OpenAIRealtimeEvent {
   type: string;
+  item_id?: string;
   delta?: string;
   transcript?: string;
   error?: { code?: string; message?: string };
@@ -179,19 +180,19 @@ export function registerCascadeSocket(server: Server, config: AppConfig): void {
             markUpstreamReady();
             break;
           case "input_audio_buffer.speech_started":
-            pipeline.markSpeechStarted();
+            pipeline.markSpeechStarted(event.item_id);
             break;
           case "input_audio_buffer.speech_stopped":
-            pipeline.markSpeechStopped();
+            pipeline.markSpeechStopped(event.item_id);
             break;
           case "input_audio_buffer.committed":
             bytesSinceCommit = 0;
             break;
           case "conversation.item.input_audio_transcription.delta":
-            pipeline.addSourceDelta(event.delta ?? "");
+            pipeline.addSourceDelta(event.delta ?? "", event.item_id);
             break;
           case "conversation.item.input_audio_transcription.completed":
-            pipeline.completeSource(event.transcript ?? "");
+            pipeline.completeSource(event.transcript ?? "", event.item_id);
             break;
           case "conversation.item.input_audio_transcription.failed":
             fail(new PublicError(
