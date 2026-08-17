@@ -10,7 +10,7 @@ class FakeTransport implements InterpreterTransport {
       type: "ready",
       models: {
         realtimeModel: "gpt-realtime",
-        transcriptionModel: "gpt-live-transcribe",
+        transcriptionModel: "gpt-4o-mini-transcribe",
         translationModel: "gpt-5.4-mini",
         ttsModel: "tts-1",
         apiKeyConfigured: true,

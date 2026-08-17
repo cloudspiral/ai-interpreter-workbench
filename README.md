@@ -3,7 +3,7 @@
 Kiku is a browser-based speech interpreter that compares two OpenAI-backed architectures under one interface:
 
 - **Realtime:** microphone → `gpt-realtime` → interpreted audio
-- **Cascade:** microphone → `gpt-live-transcribe` → `gpt-5.4-mini` → `tts-1` → interpreted audio
+- **Cascade:** microphone → `gpt-4o-mini-transcribe` → `gpt-5.4-mini` → `tts-1` → interpreted audio
 
 English → Japanese is the default product experience. Japanese → English and the assignment-required English ↔ Spanish directions are also available.
 
@@ -52,7 +52,7 @@ Open `http://localhost:3001` after `pnpm check` builds both server and browser a
 |---|---|---|
 | `OPENAI_API_KEY` | required | Server-only OpenAI credential |
 | `OPENAI_REALTIME_MODEL` | `gpt-realtime` | Exact model required by the brief |
-| `OPENAI_TRANSCRIPTION_MODEL` | `gpt-live-transcribe` | Streaming cascade STT |
+| `OPENAI_TRANSCRIPTION_MODEL` | `gpt-4o-mini-transcribe` | Streaming STT with server-side voice activity detection |
 | `OPENAI_TRANSLATION_MODEL` | `gpt-5.4-mini` | Incremental text translation |
 | `OPENAI_TTS_MODEL` | `tts-1` | Low-latency PCM speech synthesis |
 | `OPENAI_REALTIME_VOICE` | `marin` | Realtime output voice |

@@ -7,7 +7,7 @@ import { CascadePipeline } from "./cascadePipeline.js";
 
 const models = {
   realtimeModel: "gpt-realtime",
-  transcriptionModel: "gpt-live-transcribe",
+  transcriptionModel: "gpt-4o-mini-transcribe",
   translationModel: "translation-test",
   ttsModel: "tts-test",
   apiKeyConfigured: true,

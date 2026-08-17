@@ -3,7 +3,7 @@ import { z } from "zod";
 const environmentSchema = z.object({
   OPENAI_API_KEY: z.string().trim().min(1).optional(),
   OPENAI_REALTIME_MODEL: z.string().trim().min(1).default("gpt-realtime"),
-  OPENAI_TRANSCRIPTION_MODEL: z.string().trim().min(1).default("gpt-live-transcribe"),
+  OPENAI_TRANSCRIPTION_MODEL: z.string().trim().min(1).default("gpt-4o-mini-transcribe"),
   OPENAI_TRANSLATION_MODEL: z.string().trim().min(1).default("gpt-5.4-mini"),
   OPENAI_TTS_MODEL: z.string().trim().min(1).default("tts-1"),
   OPENAI_REALTIME_VOICE: z.string().trim().min(1).default("marin"),

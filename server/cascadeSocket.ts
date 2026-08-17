@@ -21,6 +21,34 @@ interface OpenAIRealtimeEvent {
 }
 
 const MAX_QUEUED_AUDIO_BYTES = 2_400_000;
+export const OPENAI_TRANSCRIPTION_SOCKET_URL =
+  "wss://api.openai.com/v1/realtime?intent=transcription";
+
+export function transcriptionSessionUpdate(model: string, sourceLanguage: string) {
+  return {
+    type: "session.update",
+    session: {
+      type: "transcription",
+      audio: {
+        input: {
+          format: { type: "audio/pcm", rate: 24000 },
+          noise_reduction: { type: "near_field" },
+          transcription: {
+            model,
+            language: sourceLanguage,
+            prompt: "Live professional interpretation. Preserve names, numbers, and punctuation.",
+          },
+          turn_detection: {
+            type: "server_vad",
+            threshold: 0.45,
+            prefix_padding_ms: 300,
+            silence_duration_ms: 450,
+          },
+        },
+      },
+    },
+  } as const;
+}
 
 export function registerCascadeSocket(server: Server, config: AppConfig): void {
   const socketServer = new WebSocketServer({ noServer: true });
@@ -84,7 +112,7 @@ export function registerCascadeSocket(server: Server, config: AppConfig): void {
     });
 
     const upstream = new WebSocket(
-      `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(config.transcriptionModel)}`,
+      OPENAI_TRANSCRIPTION_SOCKET_URL,
       {
         headers: {
           Authorization: `Bearer ${config.openAIKey}`,
@@ -95,6 +123,7 @@ export function registerCascadeSocket(server: Server, config: AppConfig): void {
     );
 
     let upstreamReady = false;
+    let upstreamFailed = false;
     let closed = false;
     let queuedBytes = 0;
     let bytesSinceCommit = 0;
@@ -102,6 +131,7 @@ export function registerCascadeSocket(server: Server, config: AppConfig): void {
 
     const fail = (error: unknown) => {
       if (closed) return;
+      upstreamFailed = true;
       const publicError = toPublicError(error);
       sendJson({
         type: "error",
@@ -129,46 +159,26 @@ export function registerCascadeSocket(server: Server, config: AppConfig): void {
       }
     };
 
-    upstream.on("open", () => {
-      upstream.send(
-        JSON.stringify({
-          type: "session.update",
-          session: {
-            type: "transcription",
-            audio: {
-              input: {
-                format: { type: "audio/pcm", rate: 24000 },
-                noise_reduction: { type: "near_field" },
-                transcription: {
-                  model: config.transcriptionModel,
-                  language: pair.source,
-                  prompt: "Live professional interpretation. Preserve names, numbers, and punctuation.",
-                },
-                turn_detection: {
-                  type: "server_vad",
-                  threshold: 0.45,
-                  prefix_padding_ms: 300,
-                  silence_duration_ms: 450,
-                  create_response: false,
-                  interrupt_response: false,
-                },
-              },
-            },
-          },
-        }),
-      );
-
+    const markUpstreamReady = () => {
+      if (upstreamReady || closed) return;
       upstreamReady = true;
       for (const audio of queuedAudio.splice(0)) sendAudioToOpenAI(audio);
       queuedBytes = 0;
       sendJson({ type: "ready", models: publicRuntimeConfig(config) });
       sendJson({ type: "status", status: "listening", message: "Cascade pipeline ready" });
+    };
+
+    upstream.on("open", () => {
+      upstream.send(JSON.stringify(transcriptionSessionUpdate(config.transcriptionModel, pair.source)));
     });
 
     upstream.on("message", (raw) => {
       try {
         const event = JSON.parse(raw.toString()) as OpenAIRealtimeEvent;
         switch (event.type) {
+          case "session.updated":
+            markUpstreamReady();
+            break;
           case "input_audio_buffer.speech_started":
             pipeline.markSpeechStarted();
             break;
@@ -223,7 +233,7 @@ export function registerCascadeSocket(server: Server, config: AppConfig): void {
     });
 
     upstream.on("close", () => {
-      if (!closed) {
+      if (!closed && !upstreamFailed) {
         sendJson({
           type: "status",
           status: "idle",
