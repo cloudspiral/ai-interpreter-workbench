@@ -11,6 +11,7 @@
     "dev": "concurrently -k -n server,web -c magenta,cyan \"tsx watch server/index.ts\" \"vite\"",
     "build": "tsc -p tsconfig.server.json && vite build",
     "start": "node dist-server/server/index.js",
+    "preflight": "tsx scripts/providerPreflight.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
     "test:watch": "vitest",

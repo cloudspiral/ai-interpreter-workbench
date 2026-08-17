@@ -223,7 +223,7 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid
   .masthead { min-height: 78px; }
   .connection-pill { padding: 8px 10px; font-size: .58rem; }
   .hero { min-height: 0; padding: 64px 0 50px; grid-template-columns: 1fr; gap: 38px; }
-  h1 { font-size: clamp(3.2rem, 16vw, 5.3rem); }
+  h1 { font-size: clamp(2.65rem, 14vw, 4.4rem); }
   .mode-panel, .session-panel, .metrics-panel { padding: 52px 0; }
   .section-heading { align-items: start; flex-direction: column; gap: 18px; }
   .section-heading > p { text-align: left; }
