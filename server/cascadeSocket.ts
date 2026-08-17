@@ -36,7 +36,6 @@ export function transcriptionSessionUpdate(model: string, sourceLanguage: string
           transcription: {
             model,
             language: sourceLanguage,
-            prompt: "Live professional interpretation. Preserve names, numbers, and punctuation.",
           },
           turn_detection: {
             type: "server_vad",

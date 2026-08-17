@@ -45,7 +45,6 @@ export function registerRealtimeRoute(app: Express, config: AppConfig): void {
             transcription: {
               model: config.transcriptionModel,
               language: pair.source,
-              prompt: "Live professional interpretation. Preserve names, numbers, and punctuation.",
             },
             noise_reduction: { type: "near_field" },
             turn_detection: {

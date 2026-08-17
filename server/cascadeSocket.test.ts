@@ -25,7 +25,6 @@ describe("OpenAI cascade transcription handshake", () => {
             transcription: {
               model: "gpt-4o-mini-transcribe",
               language: "en",
-              prompt: "Live professional interpretation. Preserve names, numbers, and punctuation.",
             },
             turn_detection: {
               type: "server_vad",
