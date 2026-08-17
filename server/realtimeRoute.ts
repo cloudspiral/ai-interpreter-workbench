@@ -49,7 +49,7 @@ export function registerRealtimeRoute(app: Express, config: AppConfig): void {
             noise_reduction: { type: "near_field" },
             turn_detection: {
               type: "server_vad",
-              threshold: 0.45,
+              threshold: 0.55,
               prefix_padding_ms: 300,
               silence_duration_ms: 450,
               create_response: true,
